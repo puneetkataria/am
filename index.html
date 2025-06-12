@@ -7,27 +7,25 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- PDF Generation Libraries -->
+    <!-- PDF & Heatmap Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
         /* Department Colors */
-        .department-card-blue { border-top: 4px solid #3b82f6; } /* Sales */
-        .department-card-purple { border-top: 4px solid #8b5cf6; } /* Marketing */
-        .department-card-green { border-top: 4px solid #10b981; } /* HR */
-        .department-card-amber { border-top: 4px solid #f59e0b; } /* Finance */
-        .department-card-slate { border-top: 4px solid #475569; } /* IT */
-        .department-card-sky { border-top: 4px solid #0ea5e9; } /* Customer Success */
-        .department-card-rose { border-top: 4px solid #f43f5e; } /* Legal */
-        .department-card-orange { border-top: 4px solid #f97316; } /* Default/New */
+        .department-card-blue, .fill-blue { border-top-color: #3b82f6; fill: #3b82f6; }
+        .department-card-purple, .fill-purple { border-top-color: #8b5cf6; fill: #8b5cf6; }
+        .department-card-green, .fill-green { border-top-color: #10b981; fill: #10b981; }
+        .department-card-amber, .fill-amber { border-top-color: #f59e0b; fill: #f59e0b; }
+        .department-card-slate, .fill-slate { border-top-color: #475569; fill: #475569; }
+        .department-card-sky, .fill-sky { border-top-color: #0ea5e9; fill: #0ea5e9; }
+        .department-card-rose, .fill-rose { border-top-color: #f43f5e; fill: #f43f5e; }
+        .department-card-orange, .fill-orange { border-top-color: #f97316; fill: #f97316; }
 
         .tbd-text { color: #9ca3af; font-style: italic; }
         .collapsible-content { max-height: 0; overflow: hidden; transition: max-height 0.5s ease-in-out; }
-        .collapsible-content.expanded { max-height: 12000px; /* Increased for more content */ }
+        .collapsible-content.expanded { max-height: 12000px; }
         .chevron-icon { transition: transform 0.3s ease; }
         .chevron-icon.rotated { transform: rotate(180deg); }
 
@@ -38,32 +36,23 @@
 
         .workflow-step { display: flex; flex-direction: column; align-items: center; text-align: center; position: relative; flex-grow: 1; }
         .workflow-step:not(:last-child)::after { content: '\f054'; font-family: 'Font Awesome 6 Free'; font-weight: 900; position: absolute; right: -20px; top: 10px; color: #cbd5e1; z-index: 0; }
-        .workflow-step.completed:not(:last-child)::after, .workflow-step.current:not(:last-child)::after { color: #2563eb; }
         
-        #toast-notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            transition: opacity 0.5s, transform 0.5s;
-            opacity: 0;
-            transform: translateY(-20px);
-        }
-        #toast-notification.show {
-            opacity: 1;
-            transform: translateY(0);
-        }
-        .action-buttons {
-            transition: opacity 0.3s;
-        }
+        #toast-notification { position: fixed; top: 20px; right: 20px; z-index: 1000; transition: opacity 0.5s, transform 0.5s; opacity: 0; transform: translateY(-20px); }
+        #toast-notification.show { opacity: 1; transform: translateY(0); }
+        .action-buttons { transition: opacity 0.3s; }
 
+        /* Heatmap Styles */
+        #heatmap-tooltip { position: absolute; text-align: left; padding: 8px; font-size: 12px; background: rgba(0,0,0,0.8); color: white; border-radius: 4px; pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 50;}
+        .treemap-leaf-text { font-size: 11px; fill: white; pointer-events: none; font-weight: 500; text-shadow: 1px 1px 2px rgba(0,0,0,0.7); }
+        .treemap-dept-label { font-size: 14px; font-weight: 700; fill: #374151; }
     </style>
 </head>
 <body class="p-4 sm:p-6 lg:p-8">
 
-    <div id="account-map-container" class="max-w-7xl mx-auto">
-        <!-- The entire account map will be rendered here by JavaScript -->
+    <div id="main-container" class="max-w-7xl mx-auto">
+        <!-- All content, including heatmap and list view, will be rendered here -->
     </div>
+   
     <div id="toast-notification" class="hidden bg-green-500 text-white font-bold py-2 px-4 rounded-lg shadow-lg">
         <span id="toast-message"></span>
     </div>
@@ -78,296 +67,227 @@
             departments: [
                 { name: "Sales & Revenue Operations", color: "blue", departmentHead: { name: "Marcus Thorne", title: "Chief Revenue Officer", linkedin: "https://linkedin.com/in/marcusthorne" },
                     systemCategories: [
-                        { name: "CRM", engagementStatus: "Opportunity ID'd", tools: [{ name: "Salesforce Sales Cloud", dapOpportunityScore: 5, owner: { name: "Isabelle Rossi", title: "VP, Revenue Operations", linkedin: "https://linkedin.com/in/isabellerossi" }, userCount: 8000, toolBudget: 4500000, potentialDAPSpend: 350000, challenges: "Adoption of new lead routing rules is under 40%. Reps complain about data entry complexity.", ongoingProjects: "Project 'Velocity' - Q4 Pipeline Acceleration Initiative.", currentDAP: "WalkMe", activities: [{ date: "2024-07-15", description: "Met Isabelle at industry conference.", status: "Completed" }, { date: "2024-09-05", description: "Initial demo of DAP capabilities for SFDC.", status: "Completed" }, { date: "2025-02-20", description: "Business case presentation with ROI analysis.", status: "Completed" }, { date: "2025-06-25", description: "Final proposal submission.", status: "Planned" }] }] },
-                        { name: "Sales Enablement", engagementStatus: "Educate", tools: [{ name: "Seismic", dapOpportunityScore: 4, owner: { name: "Liam Gallagher", title: "Director, Global Sales Enablement", linkedin: "https://linkedin.com/in/liamgallagher" }, userCount: 8200, toolBudget: 750000, potentialDAPSpend: 80000, challenges: "Content discovery is poor; reps create their own materials.", ongoingProjects: "Just-in-time learning content integration.", currentDAP: "None", activities: [{ date: "2025-01-30", description: "Introductory call with Liam.", status: "Completed" }, { date: "2025-04-10", description: "Workshop on DAP for content activation.", status: "Completed" }, { date: "2025-07-15", description: "Follow-up to share relevant case studies.", status: "Planned" }] }] },
-                        { name: "CPQ (Configure, Price, Quote)", engagementStatus: "Owner Identified", tools: [{ name: "Salesforce CPQ", dapOpportunityScore: 5, owner: { name: "Isabelle Rossi", title: "VP, Revenue Operations", linkedin: "https://linkedin.com/in/isabellerossi" }, userCount: 3500, toolBudget: 900000, potentialDAPSpend: 120000, challenges: "Complex approval workflows cause deal delays.", ongoingProjects: "New subscription billing model integration.", currentDAP: "None", activities: [{ date: "2025-05-22", description: "Identified Isabelle as owner via Sales team.", status: "Completed" }, { date: "2025-08-01", description: "Schedule introductory call.", status: "Planned" }] }] },
+                        { name: "CRM", engagementStatus: "Opportunity ID'd", tools: [{ name: "Salesforce Sales Cloud", dapOpportunityScore: 5, owner: { name: "Isabelle Rossi", title: "VP, Revenue Operations", linkedin: "https://linkedin.com/in/isabellerossi" }, userCount: 8000, toolBudget: 4500000, potentialDAPSpend: 350000, challenges: "Adoption of new lead routing rules is under 40%.", ongoingProjects: "Project 'Velocity' - Q4 Pipeline Acceleration Initiative.", currentDAP: "WalkMe", activities: [{ date: "2024-07-15", description: "Met Isabelle at industry conference.", status: "Completed" }, { date: "2025-06-25", description: "Final proposal submission.", status: "Planned" }] }] },
+                        { name: "Sales Enablement", engagementStatus: "Educate", tools: [{ name: "Seismic", dapOpportunityScore: 4, owner: { name: "Liam Gallagher", title: "Director, Global Sales Enablement", linkedin: "https://linkedin.com/in/liamgallagher" }, userCount: 8200, toolBudget: 750000, potentialDAPSpend: 80000, challenges: "Content discovery is poor.", ongoingProjects: "Just-in-time learning content integration.", currentDAP: "None", activities: [{ date: "2025-04-10", description: "Workshop on DAP for content activation.", status: "Completed" }] }] },
+                        { name: "CPQ", engagementStatus: "Owner Identified", tools: [{ name: "Salesforce CPQ", dapOpportunityScore: 5, owner: { name: "Isabelle Rossi", title: "VP, Revenue Operations", linkedin: "https://linkedin.com/in/isabellerossi" }, userCount: 3500, toolBudget: 900000, potentialDAPSpend: 120000, challenges: "Complex approval workflows cause deal delays.", ongoingProjects: "New subscription billing model integration.", currentDAP: "None", activities: [{ date: "2025-08-01", description: "Schedule introductory call.", status: "Planned" }] }] },
                         { name: "Conversation Intelligence", engagementStatus: "Map Understood", tools: [{ name: "Gong.io", dapOpportunityScore: 3, owner: { name: "To be identified", title: "" }, userCount: 6000, toolBudget: 550000, potentialDAPSpend: 50000, challenges: "Insights are not being systematically used in coaching.", ongoingProjects: "TBD", currentDAP: "None", activities: [] }] },
-                        { name: "Partner Relationship Management (PRM)", engagementStatus: "Map Understood", tools: [{ name: "Impartner", dapOpportunityScore: 4, owner: { name: "To be identified", title: "" }, userCount: 1200, toolBudget: 400000, potentialDAPSpend: 60000, challenges: "Partner onboarding is manual and time-consuming.", ongoingProjects: "Expanding channel program into APAC.", currentDAP: "Traditional LMS/SharePoint", activities: [] }] }
+                        { name: "PRM", engagementStatus: "Map Understood", tools: [{ name: "Impartner", dapOpportunityScore: 4, owner: { name: "To be identified", title: "" }, userCount: 1200, toolBudget: 400000, potentialDAPSpend: 60000, challenges: "Partner onboarding is manual.", ongoingProjects: "Expanding channel program into APAC.", currentDAP: "Traditional LMS/SharePoint", activities: [] }] }
                     ]
                 },
-                { name: "Marketing", color: "purple", departmentHead: { name: "Seraphina Chen", title: "Chief Marketing Officer", linkedin: "https://linkedin.com/in/seraphinachen" },
+                 { name: "Human Resources", color: "green", departmentHead: { name: "David Kim", title: "Chief People Officer", linkedin: "https://linkedin.com/in/davidkim" },
                     systemCategories: [
-                        { name: "Marketing Automation", engagementStatus: "Owner Engaged", tools: [{ name: "Adobe Marketo Engage", dapOpportunityScore: 4, owner: { name: "Javier Morales", title: "Sr. Director, Marketing Operations", linkedin: "https://linkedin.com/in/javiermorales" }, userCount: 400, toolBudget: 1200000, potentialDAPSpend: 95000, challenges: "Lead scoring model is outdated and complex to manage.", ongoingProjects: "GDPR compliance refresh.", currentDAP: "None", activities: [{ date: "2024-11-10", description: "Met Javier via referral from Sales.", status: "Completed" }, { date: "2025-03-01", description: "High-level DAP overview call.", status: "Completed" }] }] },
-                        { name: "Content Management (CMS)", engagementStatus: "Owner Identified", tools: [{ name: "Adobe Experience Manager", dapOpportunityScore: 3, owner: { name: "Anya Sharma", title: "Head of Digital Experience", linkedin: "https://linkedin.com/in/anyasharma" }, userCount: 300, toolBudget: 1500000, potentialDAPSpend: 75000, challenges: "Component-based authoring is confusing for regional marketers.", ongoingProjects: "Personalization engine integration.", currentDAP: "Traditional LMS/SharePoint", activities: [{ date: "2025-04-18", description: "Identified Anya as key stakeholder.", status: "Completed" }] }] },
-                        { name: "Web Analytics", engagementStatus: "Map Understood", tools: [{ name: "Google Analytics 4", dapOpportunityScore: 2, owner: { name: "To be identified", title: "" }, userCount: 1000, toolBudget: 250000, potentialDAPSpend: 30000, challenges: "Team struggles to create custom reports post-migration.", ongoingProjects: "TBD", currentDAP: "None", activities: [] }] }
+                        { name: "HCM", engagementStatus: "Opportunity ID'd", tools: [{ name: "Workday", dapOpportunityScore: 5, owner: { name: "Fatima Al-Jamil", title: "VP, HR Technology & Transformation", linkedin: "https://linkedin.com/in/fatimaaljamil" }, userCount: 85000, toolBudget: 6000000, potentialDAPSpend: 500000, challenges: "Performance management module has low adoption.", ongoingProjects: "Rollout of new internal talent marketplace.", currentDAP: "None", activities: [{ date: "2025-04-05", description: "Security and vendor review initiated.", status: "Completed" }, { date: "2025-07-20", description: "Procurement negotiation.", status: "Planned" }] }] },
+                        { name: "ATS", engagementStatus: "Educate", tools: [{ name: "Greenhouse", dapOpportunityScore: 4, owner: { name: "Kenji Tanaka", title: "Global Head of Talent Acquisition", linkedin: "https://linkedin.com/in/kenjitanaka" }, userCount: 800, toolBudget: 600000, potentialDAPSpend: 70000, challenges: "Hiring managers complain about interview scheduling.", ongoingProjects: "DEI analytics dashboard implementation.", currentDAP: "None", activities: [{ date: "2025-05-30", description: "Shared case study on DAP for recruiting platforms.", status: "Completed" }] }] },
+                        { name: "LMS", engagementStatus: "Owner Engaged", tools: [{ name: "Cornerstone OnDemand", dapOpportunityScore: 5, owner: { name: "Dr. Chloe Sullivan", title: "VP, Learning & Development", linkedin: "https://linkedin.com/in/chloesullivan" }, userCount: 85000, toolBudget: 1800000, potentialDAPSpend: 250000, challenges: "Terrible UX, low course completion rates.", ongoingProjects: "Active RFI for 'in-flow-of-work' training solutions.", currentDAP: "Traditional LMS/SharePoint", activities: [{ date: "2025-06-28", description: "Scheduled for vendor demo.", status: "Planned" }] }] }
                     ]
                 },
-                { name: "Human Resources", color: "green", departmentHead: { name: "David Kim", title: "Chief People Officer", linkedin: "https://linkedin.com/in/davidkim" },
-                    systemCategories: [
-                        { name: "Human Capital Management (HCM)", engagementStatus: "Opportunity ID'd", tools: [{ name: "Workday", dapOpportunityScore: 5, owner: { name: "Fatima Al-Jamil", title: "VP, HR Technology & Transformation", linkedin: "https://linkedin.com/in/fatimaaljamil" }, userCount: 85000, toolBudget: 6000000, potentialDAPSpend: 500000, challenges: "Performance management module has less than 30% adoption by managers.", ongoingProjects: "Rollout of new internal talent marketplace.", currentDAP: "None", activities: [{ date: "2024-10-02", description: "Responded to inbound inquiry from Fatima's team.", status: "Completed" }, { date: "2025-01-22", description: "Conducted deep-dive Workday workshop.", status: "Completed" }, { date: "2025-04-05", description: "Security and vendor review initiated.", status: "Completed" }, { date: "2025-07-20", description: "Procurement negotiation.", status: "Planned" }] }] },
-                        { name: "Applicant Tracking System (ATS)", engagementStatus: "Educate", tools: [{ name: "Greenhouse", dapOpportunityScore: 4, owner: { name: "Kenji Tanaka", title: "Global Head of Talent Acquisition", linkedin: "https://linkedin.com/in/kenjitanaka" }, userCount: 800, toolBudget: 600000, potentialDAPSpend: 70000, challenges: "Hiring managers complain about interview scheduling workflow.", ongoingProjects: "DEI analytics dashboard implementation.", currentDAP: "None", activities: [{ date: "2025-03-12", description: "Call with Kenji, discussed improving HM experience.", status: "Completed" }, { date: "2025-05-30", description: "Shared case study on DAP for recruiting platforms.", status: "Completed" }] }] },
-                        { name: "Learning Management System (LMS)", engagementStatus: "Owner Engaged", tools: [{ name: "Cornerstone OnDemand", dapOpportunityScore: 5, owner: { name: "Dr. Chloe Sullivan", title: "VP, Learning & Development", linkedin: "https://linkedin.com/in/chloesullivan" }, userCount: 85000, toolBudget: 1800000, potentialDAPSpend: 250000, challenges: "Extremely low course completion rates due to poor UX.", ongoingProjects: "Currently in an active RFI for 'in-flow-of-work' training solutions.", currentDAP: "Traditional LMS/SharePoint", activities: [{ date: "2025-06-01", description: "Submitted RFI response.", status: "Completed" }, { date: "2025-06-28", description: "Scheduled for vendor demo.", status: "Planned" }] }] }
-                    ]
-                },
-                { name: "Finance & Accounting", color: "amber", departmentHead: { name: "Olivia Hayes", title: "Chief Financial Officer", linkedin: "https://linkedin.com/in/oliviahayes" },
-                    systemCategories: [
-                        { name: "ERP", engagementStatus: "Owner Engaged", tools: [{ name: "SAP S/4HANA", dapOpportunityScore: 4, owner: { name: "Benjamin Carter", title: "VP, Enterprise Systems", linkedin: "https://linkedin.com/in/benjamincarter" }, userCount: 4000, toolBudget: 8000000, potentialDAPSpend: 200000, challenges: "Month-end close process is heavily reliant on manual checklists outside the system.", ongoingProjects: "Upgrading finance analytics module.", currentDAP: "None", activities: [{ date: "2025-02-10", description: "Initial discussion with Ben about process optimization.", status: "Completed" }] }] },
-                        { name: "Expense Management", engagementStatus: "Map Understood", tools: [{ name: "SAP Concur", dapOpportunityScore: 3, owner: { name: "Sophia Dubois", title: "Global Controller", linkedin: "https://linkedin.com/in/sophiadubois" }, userCount: 50000, toolBudget: 1500000, potentialDAPSpend: 100000, challenges: "High volume of help-desk tickets for policy questions.", ongoingProjects: "TBD", currentDAP: "None", activities: [] }] }
-                    ]
-                },
-                { name: "IT & Engineering", color: "slate", departmentHead: { name: "Dr. Evelyn Reed", title: "Chief Information & Digital Officer", linkedin: "https://linkedin.com/in/evelynreed" },
-                    systemCategories: [
-                        { name: "IT Service Management (ITSM)", engagementStatus: "Educate", tools: [{ name: "ServiceNow", dapOpportunityScore: 5, owner: { name: "Ronan O'Connell", title: "Director, IT Service Delivery", linkedin: "https://linkedin.com/in/ronanoconnell" }, userCount: 85000, toolBudget: 5000000, potentialDAPSpend: 450000, challenges: "Self-service portal has low adoption; employees call help desk directly, increasing costs.", ongoingProjects: "Project 'Keystone' - Employee Service Experience Overhaul.", currentDAP: "None", activities: [{ date: "2024-12-01", description: "Met Ronan at ServiceNow World.", status: "Completed" }, { date: "2025-04-25", description: "Presented DAP as a solution to drive portal adoption.", status: "Completed" }] }] },
-                        { name: "Identity & Access Management (IAM)", engagementStatus: "Map Understood", tools: [{ name: "Okta", dapOpportunityScore: 2, owner: { name: "Priya Singh", title: "Chief Information Security Officer (CISO)", linkedin: "https://linkedin.com/in/priyasingh" }, userCount: 85000, toolBudget: 2500000, potentialDAPSpend: 50000, challenges: "TBD", ongoingProjects: "Zero Trust Architecture implementation.", currentDAP: "None", activities: [] }] },
-                        { name: "Collaboration & Productivity", engagementStatus: "Owner Identified", tools: [{ name: "Microsoft 365 (Teams, SharePoint)", dapOpportunityScore: 4, owner: { name: "Ronan O'Connell", title: "Director, IT Service Delivery", linkedin: "https://linkedin.com/in/ronanoconnell" }, userCount: 85000, toolBudget: 12000000, potentialDAPSpend: 300000, challenges: "Underutilization of advanced features in Teams & SharePoint.", ongoingProjects: "Migration of remaining file shares to SharePoint Online.", currentDAP: "Traditional LMS/SharePoint", activities: [{ date: "2025-06-10", description: "Identified Ronan as owner for M365 adoption.", status: "Completed" }] }] }
-                    ]
-                },
-                { name: "Customer Success & Support", color: "sky", departmentHead: { name: "Gabriela Rios", title: "Chief Customer Officer", linkedin: "https://linkedin.com/in/gabrielarios" },
-                    systemCategories: [
-                        { name: "Customer Support Platform", engagementStatus: "Owner Engaged", tools: [{ name: "Zendesk Suite", dapOpportunityScore: 5, owner: { name: "Leo Martinez", title: "VP, Global Customer Support", linkedin: "https://linkedin.com/in/leomartinez" }, userCount: 2500, toolBudget: 2000000, potentialDAPSpend: 180000, challenges: "High agent training time; inconsistent use of macros and shortcuts.", ongoingProjects: "Implementing an AI-powered knowledge base.", currentDAP: "None", activities: [{ date: "2025-05-15", description: "Call with Leo on reducing agent ramp time.", status: "Completed" }] }] },
-                        { name: "Customer Success Management", engagementStatus: "Educate", tools: [{ name: "Gainsight", dapOpportunityScore: 4, owner: { name: "Nora Fitzpatrick", title: "Director, Customer Success Ops", linkedin: "https://linkedin.com/in/norafitzpatrick" }, userCount: 700, toolBudget: 950000, potentialDAPSpend: 90000, challenges: "CSMs struggle to follow the documented playbook workflows within the tool.", ongoingProjects: "Developing predictive health scoring model.", currentDAP: "Gainsight PX", activities: [{ date: "2025-04-28", description: "Demo with Nora focused on playbook adherence.", status: "Completed" }] }] }
-                    ]
-                },
-                { name: "Legal", color: "rose", departmentHead: { name: "Jonathan Sterling", title: "General Counsel", linkedin: "https://linkedin.com/in/jonathansterling" },
-                     systemCategories: [
-                        { name: "Contract Lifecycle Management (CLM)", engagementStatus: "Owner Identified", tools: [{ name: "Icertis", dapOpportunityScore: 5, owner: { name: "Simone Dubois", title: "Head of Legal Operations", linkedin: "https://linkedin.com/in/simonedubois" }, userCount: 600, toolBudget: 700000, potentialDAPSpend: 85000, challenges: "Sales team avoids using the CLM self-service portal, leading to legal bottlenecks.", ongoingProjects: "Integrating CLM with Salesforce.", currentDAP: "None", activities: [{ date: "2025-06-12", description: "Referred by Sales leadership as a key contact.", status: "Completed" }] }] }
-                    ]
-                }
             ]
         };
         
         // --- CSV / PDF LOGIC ---
-        const escapeCsvCell = (cell) => {
-            if (cell === undefined || cell === null) return '';
-            const cellStr = String(cell);
-            if (/[",\n]/.test(cellStr)) return `"${cellStr.replace(/"/g, '""')}"`;
-            return cellStr;
-        };
+        const escapeCsvCell = (cell) => { if (cell === undefined || cell === null) return ''; const cellStr = String(cell); if (/[",\n]/.test(cellStr)) return `"${cellStr.replace(/"/g, '""')}"`; return cellStr; };
+        const exportToCSV = () => { let headers = ['DepartmentName', 'DepartmentColor', 'DepartmentHeadName', 'DepartmentHeadTitle', 'DepartmentHeadLinkedIn','SystemCategory', 'EngagementStatus', 'ToolName', 'DAPOpportunityScore', 'OwnerName', 'OwnerTitle','OwnerLinkedIn', 'UserCount', 'ToolBudget', 'PotentialDAPSpend', 'Challenges', 'OngoingProjects', 'CurrentDAP']; const maxActivities = 5; for (let i = 1; i <= maxActivities; i++) { headers.push(`Activity${i}_Date`, `Activity${i}_Desc`, `Activity${i}_Status`); } const rows = accountData.departments.flatMap(dept => dept.systemCategories.flatMap(cat => cat.tools.map(tool => { const baseRow = [ dept.name, dept.color, dept.departmentHead.name, dept.departmentHead.title, dept.departmentHead.linkedin, cat.name, cat.engagementStatus, tool.name, tool.dapOpportunityScore, tool.owner.name, tool.owner.title, tool.owner.linkedin, tool.userCount, tool.toolBudget, tool.potentialDAPSpend, tool.challenges, tool.ongoingProjects, tool.currentDAP ]; const activityRow = []; for (let i = 0; i < maxActivities; i++) { const act = tool.activities ? tool.activities[i] : null; activityRow.push(act ? act.date : '', act ? act.description : '', act ? act.status : ''); } return [...baseRow, ...activityRow].map(escapeCsvCell); }))); const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(row => row.join(','))].join('\n'); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `account_map_${accountData.companyName.replace(/\s+/g, '_')}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+        const parseCSV = (csvText) => { const lines = csvText.trim().split(/\r?\n/); if (lines.length < 2) return []; const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, '')); const dataRows = []; for (let i = 1; i < lines.length; i++) { if (!lines[i].trim()) continue; const values = []; let currentField = ''; let inQuotes = false; for (let j = 0; j < lines[i].length; j++) { const char = lines[i][j]; if (char === '"') { if (inQuotes && lines[i][j + 1] === '"') { currentField += '"'; j++; } else { inQuotes = !inQuotes; } } else if (char === ',' && !inQuotes) { values.push(currentField); currentField = ''; } else { currentField += char; } } values.push(currentField); if (values.length >= headers.length) { const obj = {}; headers.forEach((header, index) => { obj[header] = values[index]; }); dataRows.push(obj); } else { console.warn(`Skipping malformed row ${i + 1}: Expected ${headers.length} columns, but found ${values.length}. Content: ${lines[i]}`); } } return dataRows; };
+        const importFromCSV = (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const dataRows = parseCSV(e.target.result); const newDepartments = {}; dataRows.forEach(row => { if (!row.DepartmentName || row.DepartmentName.trim() === '') return; if (!newDepartments[row.DepartmentName]) { const safeColor = (row.DepartmentColor || '').trim(); newDepartments[row.DepartmentName] = { name: row.DepartmentName, color: safeColor || 'orange', departmentHead: { name: row.DepartmentHeadName, title: row.DepartmentHeadTitle, linkedin: row.DepartmentHeadLinkedIn }, systemCategories: {} }; } const dept = newDepartments[row.DepartmentName]; if (!dept.systemCategories[row.SystemCategory] || !dept.systemCategories[row.SystemCategory].tools) { dept.systemCategories[row.SystemCategory] = { name: row.SystemCategory, engagementStatus: row.EngagementStatus || 'Map Understood', tools: [] }; } const cat = dept.systemCategories[row.SystemCategory]; const activities = []; for(let i = 1; i <= 5; i++) { if(row[`Activity${i}_Date`] && row[`Activity${i}_Desc`]) { activities.push({ date: row[`Activity${i}_Date`], description: row[`Activity${i}_Desc`], status: row[`Activity${i}_Status`] || 'Planned' }); } } cat.tools.push({ name: row.ToolName, dapOpportunityScore: parseInt(row.DAPOpportunityScore, 10) || 0, owner: { name: row.OwnerName, title: row.OwnerTitle, linkedin: row.OwnerLinkedIn }, influencers: [], userCount: parseInt(String(row.UserCount || '0').replace(/,/g, ''), 10) || 0, toolBudget: parseInt(String(row.ToolBudget || '0').replace(/[$,]/g, ''), 10) || 0, potentialDAPSpend: parseInt(String(row.PotentialDAPSpend || '0').replace(/[$,]/g, ''), 10) || 0, challenges: row.Challenges, ongoingProjects: row.OngoingProjects, currentDAP: row.CurrentDAP, activities: activities }); }); accountData.departments = Object.values(newDepartments).map(dept => { dept.systemCategories = Object.values(dept.systemCategories); return dept; }); renderPageLayout(accountData); showToast('Successfully imported and updated the account map!'); } catch (error) { console.error("Failed to parse CSV:", error); showToast('Error processing CSV. Check format and console.', true); } }; reader.readAsText(file); };
+        const exportToPDF = () => { const { jsPDF } = window.jspdf; const container = document.getElementById('main-container'); const actionButtons = document.querySelectorAll('.action-buttons'); showToast('Generating PDF, please wait...'); actionButtons.forEach(btn => btn.style.opacity = '0'); html2canvas(container, { scale: 2, useCORS: true, windowWidth: 1400 }).then(canvas => { const imgData = canvas.toDataURL('image/png'); const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' }); const pdfWidth = pdf.internal.pageSize.getWidth(); const pdfHeight = pdf.internal.pageSize.getHeight(); const canvasWidth = canvas.width; const canvasHeight = canvas.height; const ratio = canvasWidth / canvasHeight; let imgWidth = pdfWidth; let imgHeight = imgWidth / ratio; let heightLeft = imgHeight; let position = 0; pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight); heightLeft -= pdfHeight; while (heightLeft > 0) { position = heightLeft - imgHeight; pdf.addPage(); pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight); heightLeft -= pdfHeight; } pdf.save(`account_map_${accountData.companyName.replace(/\s+/g, '_')}.pdf`); actionButtons.forEach(btn => btn.style.opacity = '1'); }); };
+        const showToast = (message, isError = false) => { const toast = document.getElementById('toast-notification'); const toastMessage = document.getElementById('toast-message'); toastMessage.textContent = message; toast.className = `p-4 rounded-lg shadow-lg text-white font-bold ${isError ? 'bg-red-500' : 'bg-green-500'}`; toast.classList.add('show'); setTimeout(() => { toast.classList.remove('show'); }, 3000); };
         
-        const exportToCSV = () => {
-            let headers = ['DepartmentName', 'DepartmentColor', 'DepartmentHeadName', 'DepartmentHeadTitle', 'DepartmentHeadLinkedIn','SystemCategory', 'EngagementStatus', 'ToolName', 'DAPOpportunityScore', 'OwnerName', 'OwnerTitle','OwnerLinkedIn', 'UserCount', 'ToolBudget', 'PotentialDAPSpend', 'Challenges', 'OngoingProjects', 'CurrentDAP'];
-            const maxActivities = 5; // Set a reasonable max for CSV columns
-            for (let i = 1; i <= maxActivities; i++) {
-                headers.push(`Activity${i}_Date`, `Activity${i}_Desc`, `Activity${i}_Status`);
-            }
-
-            const rows = accountData.departments.flatMap(dept =>
-                dept.systemCategories.flatMap(cat =>
-                    cat.tools.map(tool => {
-                        const baseRow = [ dept.name, dept.color, dept.departmentHead.name, dept.departmentHead.title, dept.departmentHead.linkedin, cat.name, cat.engagementStatus, tool.name, tool.dapOpportunityScore, tool.owner.name, tool.owner.title, tool.owner.linkedin, tool.userCount, tool.toolBudget, tool.potentialDAPSpend, tool.challenges, tool.ongoingProjects, tool.currentDAP ];
-                        const activityRow = [];
-                        for (let i = 0; i < maxActivities; i++) {
-                            const act = tool.activities ? tool.activities[i] : null;
-                            activityRow.push(act ? act.date : '', act ? act.description : '', act ? act.status : '');
-                        }
-                        return [...baseRow, ...activityRow].map(escapeCsvCell);
-                    })
-                )
-            );
-
-            const csvContent = "data:text/csv;charset=utf-8," + [headers.join(','), ...rows.map(row => row.join(','))].join('\n');
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement("a");
-            link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `account_map_${accountData.companyName.replace(/\s+/g, '_')}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        };
-
-        const parseCSV = (csvText) => {
-            const lines = csvText.trim().split(/\r?\n/);
-            if (lines.length < 2) return [];
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-            const dataRows = [];
-            for (let i = 1; i < lines.length; i++) {
-                if (!lines[i].trim()) continue;
-                const values = [];
-                let currentField = '';
-                let inQuotes = false;
-                for (let j = 0; j < lines[i].length; j++) {
-                    const char = lines[i][j];
-                    if (char === '"') {
-                        if (inQuotes && lines[i][j + 1] === '"') { currentField += '"'; j++; } else { inQuotes = !inQuotes; }
-                    } else if (char === ',' && !inQuotes) { values.push(currentField); currentField = ''; } 
-                    else { currentField += char; }
-                }
-                values.push(currentField);
-                const obj = {};
-                headers.forEach((header, index) => { obj[header] = values[index]; });
-                dataRows.push(obj);
-            }
-            return dataRows;
-        };
-        
-        const importFromCSV = (event) => {
-            const file = event.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const dataRows = parseCSV(e.target.result);
-                    const newDepartments = {};
-                    
-                    dataRows.forEach(row => {
-                        if (!row.DepartmentName || row.DepartmentName.trim() === '') return;
-                        if (!newDepartments[row.DepartmentName]) {
-                            newDepartments[row.DepartmentName] = { name: row.DepartmentName, color: row.DepartmentColor || 'orange', departmentHead: { name: row.DepartmentHeadName, title: row.DepartmentHeadTitle, linkedin: row.DepartmentHeadLinkedIn }, systemCategories: {} };
-                        }
-                        const dept = newDepartments[row.DepartmentName];
-
-                        if (!dept.systemCategories[row.SystemCategory]) {
-                            dept.systemCategories[row.SystemCategory] = { name: row.SystemCategory, engagementStatus: row.EngagementStatus || 'Map Understood', tools: [] };
-                        }
-                        const cat = dept.systemCategories[row.SystemCategory];
-                        
-                        const activities = [];
-                        for(let i = 1; i <= 5; i++) {
-                            if(row[`Activity${i}_Date`] && row[`Activity${i}_Desc`]) {
-                                activities.push({ date: row[`Activity${i}_Date`], description: row[`Activity${i}_Desc`], status: row[`Activity${i}_Status`] || 'Planned' });
-                            }
-                        }
-
-                        cat.tools.push({
-                            name: row.ToolName, dapOpportunityScore: parseInt(row.DAPOpportunityScore, 10) || 0,
-                            owner: { name: row.OwnerName, title: row.OwnerTitle, linkedin: row.OwnerLinkedIn }, influencers: [], 
-                            userCount: parseInt(String(row.UserCount || '0').replace(/,/g, ''), 10) || 0, 
-                            toolBudget: parseInt(String(row.ToolBudget || '0').replace(/[$,]/g, ''), 10) || 0,
-                            potentialDAPSpend: parseInt(String(row.PotentialDAPSpend || '0').replace(/[$,]/g, ''), 10) || 0,
-                            challenges: row.Challenges, ongoingProjects: row.OngoingProjects, currentDAP: row.CurrentDAP,
-                            activities: activities
-                        });
-                    });
-                    
-                    accountData.departments = Object.values(newDepartments).map(dept => {
-                        dept.systemCategories = Object.values(dept.systemCategories);
-                        return dept;
-                    });
-
-                    renderAccountMap(accountData);
-                    showToast('Successfully imported and updated the account map!');
-                } catch (error) {
-                    console.error("Failed to parse CSV:", error);
-                    showToast('Error processing CSV. Check format and console for details.', true);
-                }
+        // --- Heatmap Rendering ---
+        const renderHeatmap = (data, containerId) => {
+            const heatmapData = {
+                name: "root",
+                children: data.departments.map(dept => ({
+                    name: dept.name,
+                    color: dept.color,
+                    children: dept.systemCategories.map(cat => ({
+                        name: cat.name,
+                        engagementStatus: cat.engagementStatus,
+                        value: cat.tools.reduce((sum, tool) => sum + (tool.userCount || 0), 0),
+                        tools: cat.tools // Keep for tooltip
+                    }))
+                }))
             };
-            reader.readAsText(file);
-        };
-        
-        const exportToPDF = () => {
-            const { jsPDF } = window.jspdf;
-            const container = document.getElementById('account-map-container');
-            const actionButtons = document.querySelectorAll('.action-buttons');
+
+            const container = d3.select(`#${containerId}`);
+            if (!container.node() || container.node().getBoundingClientRect().width === 0) return;
+            container.select("svg").remove();
+
+            const width = container.node().getBoundingClientRect().width;
+            const height = width * 0.55;
+
+            const engagementMap = { "Map Understood": 0, "Owner Identified": 1, "Owner Engaged": 2, "Educate": 3, "Opportunity ID'd": 4 };
+            const engagementColor = d3.scaleLinear()
+                .domain([0, 1, 2, 3, 4])
+                .range(["#9ca3af", "#facc15", "#60a5fa", "#3b82f6", "#22c55e"]); // Gray -> Yellow -> Light Blue -> Blue -> Green
+
+            const treemap = d3.treemap().size([width, height]).padding(1).paddingOuter(3);
             
-            showToast('Generating PDF, please wait...');
-            actionButtons.forEach(btn => btn.style.opacity = '0'); // Hide buttons from capture
+            const root = d3.hierarchy(heatmapData)
+                .sum(d => d.value)
+                .sort((a, b) => b.value - a.value);
 
-            html2canvas(container, { scale: 2, useCORS: true }).then(canvas => {
-                const imgData = canvas.toDataURL('image/png');
-                const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-                const pdfWidth = pdf.internal.pageSize.getWidth();
-                const pdfHeight = pdf.internal.pageSize.getHeight();
-                const canvasWidth = canvas.width;
-                const canvasHeight = canvas.height;
-                const ratio = canvasWidth / canvasHeight;
-                const imgWidth = pdfWidth;
-                const imgHeight = imgWidth / ratio;
-                let heightLeft = imgHeight;
-                let position = 0;
+            treemap(root);
 
-                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                heightLeft -= pdfHeight;
+            const svg = container.append("svg").attr("width", width).attr("height", height);
+            const tooltip = d3.select("#heatmap-tooltip");
 
-                while (heightLeft > 0) {
-                    position = heightLeft - imgHeight;
-                    pdf.addPage();
-                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                    heightLeft -= pdfHeight;
+            const cell = svg.selectAll("g")
+                .data(root.descendants())
+                .join("g")
+                .attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+            cell.append("rect")
+                .attr("width", d => d.x1 - d.x0)
+                .attr("height", d => d.y1 - d.y0)
+                .attr("fill", d => {
+                    if (d.depth === 0) return "none";
+                    if (d.depth === 1) {
+                        const safeColor = d.data.color || 'orange';
+                        const deptColor = d3.color(safeColor);
+                        return deptColor ? deptColor.brighter(1.5) : "#f3f4f6";
+                    }
+                    return engagementColor(engagementMap[d.data.engagementStatus]);
+                })
+                .attr("stroke", d => {
+                    if (d.depth === 1) {
+                         const safeColor = d.data.color || 'orange';
+                         const deptColor = d3.color(safeColor);
+                         return deptColor ? deptColor.darker(0.5) : "#cccccc";
+                    }
+                    return "white";
+                });
+
+            // Department labels
+            cell.filter(d => d.depth === 1)
+                .append("text")
+                .attr("class", "treemap-dept-label")
+                .attr("x", 4).attr("y", 16)
+                .text(d => d.data.name);
+
+            // Category labels
+            const leafCells = cell.filter(d => d.depth === 2);
+            leafCells.append("text")
+                .attr("class", "treemap-leaf-text")
+                .selectAll("tspan")
+                .data(d => d.data.name.split(/(?=[A-Z][a-z])|\s+/g))
+                .join("tspan")
+                .attr("x", 4)
+                .attr("y", (d,i) => 13 + i * 10)
+                .text(d => d);
+
+            leafCells.on("mouseover", (event, d) => {
+                tooltip.style("opacity", 1)
+                    .html(`
+                        <strong>Dept:</strong> ${d.parent.data.name}<br>
+                        <strong>Category:</strong> ${d.data.name}<br>
+                        <strong>Total Users:</strong> ${(d.value || 0).toLocaleString()}<br>
+                        <strong>Status:</strong> ${d.data.engagementStatus}
+                    `);
+            }).on("mousemove", (event) => {
+                const tooltipNode = tooltip.node();
+                const tooltipWidth = tooltipNode.offsetWidth;
+                const pageX = event.pageX;
+                const windowWidth = window.innerWidth;
+
+                let x = pageX + 15;
+                // If the tooltip goes past the right edge, flip it to the left of the cursor
+                if (x + tooltipWidth > windowWidth) {
+                    x = pageX - tooltipWidth - 15;
                 }
-                pdf.save(`account_map_${accountData.companyName.replace(/\s+/g, '_')}.pdf`);
-                actionButtons.forEach(btn => btn.style.opacity = '1'); // Show buttons again
+                tooltip.style("left", x + "px")
+                       .style("top", (event.pageY + 10) + "px");
+
+            }).on("mouseout", () => {
+                tooltip.style("opacity", 0);
             });
         };
 
-        const showToast = (message, isError = false) => {
-            const toast = document.getElementById('toast-notification');
-            const toastMessage = document.getElementById('toast-message');
-            toastMessage.textContent = message;
-            toast.className = `p-4 rounded-lg shadow-lg text-white font-bold ${isError ? 'bg-red-500' : 'bg-green-500'}`;
-            toast.classList.add('show');
-            setTimeout(() => { toast.classList.remove('show'); }, 3000);
-        };
-
-        // --- DYNAMIC RENDERING LOGIC ---
+        // --- Main Rendering Logic ---
         const formatCurrency = (number) => isNaN(number) || number === 0 ? 'TBD' : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(number);
-        const createIconDetail = (iconClass, text, link, textClass = 'text-gray-700') => {
-             const content = `<i class="${iconClass} text-gray-500 w-5 text-center"></i><span class="ml-2 ${textClass}">${text}</span>`;
-             if (link) return `<a href="${link}" target="_blank" class="flex items-center hover:text-blue-600 transition-colors">${content}<i class="fas fa-external-link-alt text-xs ml-1.5 opacity-60"></i></a>`;
-             return `<div class="flex items-center">${content}</div>`;
-        };
-        const getDapStatusInfo = (currentDAP) => {
-            if (!currentDAP) return { text: 'N/A', className: 'dap-status-legacy' };
-            const lowerCaseDap = currentDAP.toLowerCase();
-            if (lowerCaseDap === 'none') return { text: 'Opportunity', className: 'dap-status-opportunity' };
-            if (lowerCaseDap.includes('walkme') || lowerCaseDap.includes('pendo') || lowerCaseDap.includes('gainsight px')) return { text: `Competitor: ${currentDAP}`, className: 'dap-status-competitor' };
-            return { text: 'Legacy/Internal', className: 'dap-status-legacy' };
-        };
-        const renderEngagementWorkflow = (currentStatus) => {
-            const stages = ["Map Understood", "Owner Identified", "Owner Engaged", "Educate", "Opportunity ID'd"];
-            const icons = ["fa-map", "fa-user-check", "fa-comments", "fa-chalkboard-user", "fa-lightbulb"];
-            let html = '<div class="flex items-start justify-between mt-4 border-t pt-4 px-2">';
-            const currentIndex = stages.indexOf(currentStatus);
-            stages.forEach((stage, index) => {
-                let colorClass = 'text-gray-400', stepClass = 'pending';
-                if (index < currentIndex) { colorClass = 'text-green-500'; stepClass = 'completed'; }
-                if (index === currentIndex) { colorClass = 'text-blue-500'; stepClass = 'current'; }
-                html += `<div class="workflow-step ${stepClass}"><i class="fas ${icons[index]} ${colorClass} text-2xl z-10 bg-gray-100/80 p-1 rounded-full"></i><p class="text-xs mt-1 ${colorClass}">${stage}</p></div>`;
-            });
-            return html + '</div>';
-        };
-        const renderActivities = (activities) => {
-            if (!activities || activities.length === 0) return '<p class="text-sm text-gray-500 mt-2">No activities logged.</p>';
-            const sortedActivities = activities.sort((a,b) => new Date(b.date) - new Date(a.date));
-            return `<div class="mt-2 space-y-2">` + sortedActivities.map(act => {
-                const isCompleted = act.status === 'Completed';
-                const icon = isCompleted ? 'fa-check-circle text-green-500' : 'fa-calendar-alt text-blue-500';
-                return `<div class="flex items-start text-sm"><i class="fas ${icon} w-5 text-center mt-1"></i><div class="ml-2"><p class="font-medium text-gray-800">${act.description}</p><p class="text-xs text-gray-500">${act.date}</p></div></div>`;
-            }).join('') + `</div>`;
-        };
-        const toggleCollapse = (header) => {
-            const content = header.nextElementSibling;
-            const icon = header.querySelector('.chevron-icon');
-            content.classList.toggle('expanded');
-            icon.classList.toggle('rotated');
-        };
+        const createIconDetail = (iconClass, text, link, textClass = 'text-gray-700') => { const content = `<i class="${iconClass} text-gray-500 w-5 text-center"></i><span class="ml-2 ${textClass}">${text}</span>`; if (link) return `<a href="${link}" target="_blank" class="flex items-center hover:text-blue-600 transition-colors">${content}<i class="fas fa-external-link-alt text-xs ml-1.5 opacity-60"></i></a>`; return `<div class="flex items-center">${content}</div>`; };
+        const getDapStatusInfo = (currentDAP) => { if (!currentDAP) return { text: 'N/A', className: 'dap-status-legacy' }; const lowerCaseDap = currentDAP.toLowerCase(); if (lowerCaseDap === 'none') return { text: 'Opportunity', className: 'dap-status-opportunity' }; if (lowerCaseDap.includes('walkme') || lowerCaseDap.includes('pendo') || lowerCaseDap.includes('gainsight px')) return { text: `Competitor: ${currentDAP}`, className: 'dap-status-competitor' }; return { text: 'Legacy/Internal', className: 'dap-status-legacy' }; };
+        const renderEngagementWorkflow = (currentStatus) => { const stages = ["Map Understood", "Owner Identified", "Owner Engaged", "Educate", "Opportunity ID'd"]; const icons = ["fa-map", "fa-user-check", "fa-comments", "fa-chalkboard-user", "fa-lightbulb"]; let html = '<div class="flex items-start justify-between mt-4 border-t pt-4 px-2">'; const currentIndex = stages.indexOf(currentStatus); stages.forEach((stage, index) => { let colorClass = 'text-gray-400', stepClass = 'pending'; if (index < currentIndex) { colorClass = 'text-green-500'; stepClass = 'completed'; } if (index === currentIndex) { colorClass = 'text-blue-500'; stepClass = 'current'; } html += `<div class="workflow-step ${stepClass}"><i class="fas ${icons[index]} ${colorClass} text-2xl z-10 bg-gray-100/80 p-1 rounded-full"></i><p class="text-xs mt-1 ${colorClass}">${stage}</p></div>`; }); return html + '</div>'; };
+        const renderActivities = (activities) => { if (!activities || activities.length === 0) return '<p class="text-sm text-gray-500 mt-2">No activities logged.</p>'; const sortedActivities = activities.sort((a,b) => new Date(b.date) - new Date(a.date)); return `<div class="mt-2 space-y-2">` + sortedActivities.map(act => { const isCompleted = act.status === 'Completed'; const icon = isCompleted ? 'fa-check-circle text-green-500' : 'fa-calendar-alt text-blue-500'; return `<div class="flex items-start text-sm"><i class="fas ${icon} w-5 text-center mt-1"></i><div class="ml-2"><p class="font-medium text-gray-800">${act.description}</p><p class="text-xs text-gray-500">${act.date}</p></div></div>`; }).join('') + `</div>`; };
+        const toggleCollapse = (header) => { const content = header.nextElementSibling; const icon = header.querySelector('.chevron-icon'); content.classList.toggle('expanded'); icon.classList.toggle('rotated'); };
 
-        const renderAccountMap = (data) => {
-            const container = document.getElementById('account-map-container');
+        const renderPageLayout = (data) => {
+            const container = document.getElementById('main-container');
             let totalPotentialDAPSpend = 0, totalIdentifiedITSpend = 0, totalUsersMapped = 0, mappedCount = 0, engagedCount = 0, totalCategories = 0;
+            
+            (data.departments || []).forEach(dept => {
+                (dept.systemCategories || []).forEach(cat => {
+                    totalCategories++;
+                    if(["Owner Identified", "Owner Engaged", "Educate", "Opportunity ID'd"].includes(cat.engagementStatus)) mappedCount++;
+                    if(["Owner Engaged", "Educate", "Opportunity ID'd"].includes(cat.engagementStatus)) engagedCount++;
+                    (cat.tools || []).forEach(tool => {
+                        totalPotentialDAPSpend += tool.potentialDAPSpend || 0;
+                        totalIdentifiedITSpend += tool.toolBudget || 0;
+                        totalUsersMapped += tool.userCount || 0;
+                    });
+                });
+            });
+
+            const accountHtml = `<div class="bg-white p-6 rounded-xl shadow-lg mb-8">
+                <div class="flex flex-col sm:flex-row justify-between items-start">
+                    <div class="w-full sm:w-2/3">
+                        <h1 class="text-3xl font-bold text-gray-900">${data.companyName}</h1>
+                        <div class="mt-2">${createIconDetail('fa-solid fa-user-shield', `<b>CIO:</b> ${data.cio.name}, <i>${data.cio.title}</i>`, data.cio.linkedin)}</div>
+                        <div class="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">${createIconDetail('fa-solid fa-globe', data.website, `http://${data.website}`)}${createIconDetail('fa-solid fa-building', `${data.employeeCount.toLocaleString()} Employees`)}${createIconDetail('fa-solid fa-users-viewfinder', `<b>${totalUsersMapped.toLocaleString()}</b> Users Mapped`)}${createIconDetail('fa-solid fa-map-marker-alt', `HQ: ${data.hq}`)}${createIconDetail('fa-solid fa-flag', `Region: ${data.primaryRegion}`)}</div>
+                    </div>
+                    <div class="text-left sm:text-right mt-4 sm:mt-0 w-full sm:w-auto">
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                            <p class="text-lg font-semibold text-blue-700">Overall Opportunity</p>
+                            <p class="text-sm text-gray-600 mt-1">Total Potential DAP Spend: <b class="text-lg text-green-700">${formatCurrency(totalPotentialDAPSpend)}</b></p>
+                            <p class="text-sm text-gray-600 mt-2">Total IT Spend: <b class="text-base">${formatCurrency(totalIdentifiedITSpend)}</b></p>
+                        </div>
+                        <div class="mt-4 flex sm:flex-col space-x-2 sm:space-x-0 sm:space-y-2 action-buttons">
+                            <button id="import-btn" class="flex-1 w-full bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"><i class="fas fa-upload mr-2"></i>Import CSV</button>
+                            <button id="export-btn" class="flex-1 w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"><i class="fas fa-download mr-2"></i>Export to CSV</button>
+                            <button id="pdf-btn" class="flex-1 w-full bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-red-700 transition-colors"><i class="fas fa-file-pdf mr-2"></i>Export to PDF</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 pt-4 border-t">
+                    <p class="text-center font-semibold text-gray-700">Account Engagement Progress: ${totalCategories > 0 ? Math.round((mappedCount/totalCategories)*100) : 0}% Mapped, ${totalCategories > 0 ? Math.round((engagedCount/totalCategories)*100) : 0}% Engaged</p>
+                    <div class="w-full bg-gray-200 rounded-full h-4 mt-2 relative"><div class="bg-blue-600 h-4 rounded-l-full absolute" style="width: ${totalCategories > 0 ? Math.round((mappedCount/totalCategories)*100) : 0}%; z-index: 10;" title="Mapped"></div><div class="bg-green-600 h-4 rounded-l-full absolute" style="width: ${totalCategories > 0 ? Math.round((engagedCount/totalCategories)*100) : 0}%; z-index: 20;" title="Engaged"></div></div>
+                </div>
+            </div>`;
+
+            const heatmapHtml = `<div class="bg-white p-6 rounded-xl shadow-lg my-8">
+                                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Account Heat Map (by Users & Engagement)</h2>
+                                    <div id="heatmap-container" class="w-full">
+                                         <div id="heatmap-tooltip"></div>
+                                    </div>
+                                 </div>`;
             
             const departmentsHtml = (data.departments || []).map(dept => {
                 let deptTotalBudget = 0, deptTotalUsers = 0;
                 const systemCategoriesHtml = (dept.systemCategories || []).map(cat => {
-                    totalCategories++;
-                    if(["Owner Identified", "Owner Engaged", "Educate", "Opportunity ID'd"].includes(cat.engagementStatus)) mappedCount++;
-                    if(["Owner Engaged", "Educate", "Opportunity ID'd"].includes(cat.engagementStatus)) engagedCount++;
                     const toolsHtml = (cat.tools || []).map(tool => {
-                        totalPotentialDAPSpend += tool.potentialDAPSpend || 0;
-                        deptTotalBudget += tool.toolBudget; deptTotalUsers += tool.userCount;
+                        deptTotalBudget += tool.toolBudget || 0; deptTotalUsers += tool.userCount || 0;
                         const dapStatus = getDapStatusInfo(tool.currentDAP);
                         return `<div class="mt-2 p-4 border rounded-lg bg-white shadow-sm"><h4 class="font-bold text-lg text-gray-800">${tool.name}</h4><div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3 mt-3 text-sm">${createIconDetail('fa-solid fa-bullseye', `DAP Opportunity: ${tool.dapOpportunityScore}/5`)}${createIconDetail('fa-solid fa-sack-dollar', `Potential DAP Spend: <b class="text-green-700">${formatCurrency(tool.potentialDAPSpend)}</b>`)}${createIconDetail('fa-solid fa-user-tie', `<b>Owner:</b> &nbsp;${tool.owner.name==='To be identified'||!tool.owner.name?`<span class='tbd-text'>To be identified</span>`:`${tool.owner.name}, <i>${tool.owner.title}</i>`}`,tool.owner.linkedin)}${createIconDetail('fa-solid fa-users', `Users: ~${(tool.userCount || 0).toLocaleString()}`)}${createIconDetail('fa-solid fa-dollar-sign',`Tool Budget: ${formatCurrency(tool.toolBudget)}`)}<div><div class="flex items-start"><i class="fa-solid fa-puzzle-piece text-gray-500 w-5 text-center mt-1"></i><div class="ml-2"><span class="text-gray-700">Current DAP Solution:</span><p><span class="dap-status-badge ${dapStatus.className}">${dapStatus.text}</span></p></div></div></div><div><div class="flex items-start"><i class="fa-solid fa-triangle-exclamation text-gray-500 w-5 text-center mt-1"></i><div class="ml-2"><span class="text-gray-700">Known Challenges:</span><p class="text-gray-600">${tool.challenges==='TBD'||!tool.challenges?`<span class='tbd-text'>TBD</span>`:tool.challenges}</p></div></div></div><div><div class="flex items-start"><i class="fa-solid fa-diagram-project text-gray-500 w-5 text-center mt-1"></i><div class="ml-2"><span class="text-gray-700">Ongoing Projects:</span><p class="text-gray-600">${tool.ongoingProjects==='TBD'||!tool.ongoingProjects?`<span class='tbd-text'>TBD</span>`:tool.ongoingProjects}</p></div></div></div></div><div class="mt-4 pt-4 border-t"><h5 class="font-semibold text-gray-800">Activities Log</h5>${renderActivities(tool.activities)}</div></div>`;
                     }).join('');
                     return `<div class="mt-4"><div class="bg-gray-200 p-3 rounded-lg cursor-pointer flex justify-between items-center category-header"><h3 class="font-semibold text-md text-gray-800">${cat.name}</h3><i class="fas fa-chevron-down chevron-icon text-gray-600"></i></div><div class="collapsible-content p-4 bg-gray-100/50 rounded-b-lg">${renderEngagementWorkflow(cat.engagementStatus)}${toolsHtml}</div></div>`;
                 }).join('');
-                totalUsersMapped += deptTotalUsers; totalIdentifiedITSpend += deptTotalBudget;
                 return `<div class="mb-6 bg-white rounded-xl shadow-md overflow-hidden department-card-${dept.color || 'orange'}"><div class="p-4 flex flex-col sm:flex-row justify-between sm:items-center cursor-pointer department-header"><div class="flex-grow"><h2 class="text-xl font-bold text-gray-900">${dept.name}</h2><div class="mt-2">${createIconDetail('fa-solid fa-user-crown', `<b>Head:</b> ${dept.departmentHead.name || 'TBD'}, <i>${dept.departmentHead.title || ''}</i>`, dept.departmentHead.linkedin, 'font-semibold text-gray-800')}</div></div><div class="mt-3 sm:mt-0 sm:text-right bg-slate-100 p-3 rounded-lg"><p class="text-md font-semibold text-slate-800"><i class="fa-solid fa-users mr-1"></i>${deptTotalUsers.toLocaleString()} Users</p><p class="text-md font-semibold text-slate-800 mt-1"><i class="fa-solid fa-dollar-sign mr-1"></i>${formatCurrency(deptTotalBudget)} Budget</p></div><i class="fas fa-chevron-down chevron-icon rotated text-gray-600 text-xl ml-4 self-center"></i></div><div class="collapsible-content expanded px-4 pb-4">${systemCategoriesHtml}</div></div>`;
             }).join('');
             
-            const accountHtml = `<div class="bg-white p-6 rounded-xl shadow-lg mb-8"><div class="flex flex-col sm:flex-row justify-between items-start"><div class="w-full sm:w-2/3"><h1 class="text-3xl font-bold text-gray-900">${data.companyName}</h1><div class="mt-2">${createIconDetail('fa-solid fa-user-shield', `<b>CIO:</b> ${data.cio.name}, <i>${data.cio.title}</i>`, data.cio.linkedin)}</div><div class="mt-4 pt-4 border-t grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">${createIconDetail('fa-solid fa-globe', data.website, `http://${data.website}`)}${createIconDetail('fa-solid fa-building', `${data.employeeCount.toLocaleString()} Employees`)}${createIconDetail('fa-solid fa-users-viewfinder', `<b>${totalUsersMapped.toLocaleString()}</b> Users Mapped`)}${createIconDetail('fa-solid fa-map-marker-alt', `HQ: ${data.hq}`)}${createIconDetail('fa-solid fa-flag', `Region: ${data.primaryRegion}`)}</div></div><div class="text-left sm:text-right mt-4 sm:mt-0 w-full sm:w-auto"><div class="bg-blue-50 p-4 rounded-lg border border-blue-200"><p class="text-lg font-semibold text-blue-700">Overall Opportunity</p><p class="text-sm text-gray-600 mt-1">Total Potential DAP Spend: <b class="text-lg text-green-700">${formatCurrency(totalPotentialDAPSpend)}</b></p><p class="text-sm text-gray-600 mt-2">Total IT Spend: <b class="text-base">${formatCurrency(totalIdentifiedITSpend)}</b></p></div><div class="mt-4 flex sm:flex-col space-x-2 sm:space-x-0 sm:space-y-2 action-buttons"><button id="import-btn" class="flex-1 w-full bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"><i class="fas fa-upload mr-2"></i>Import CSV</button><button id="export-btn" class="flex-1 w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-blue-700 transition-colors"><i class="fas fa-download mr-2"></i>Export to CSV</button><button id="pdf-btn" class="flex-1 w-full bg-red-600 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-red-700 transition-colors"><i class="fas fa-file-pdf mr-2"></i>Export to PDF</button></div></div></div><div class="mt-4 pt-4 border-t"><p class="text-center font-semibold text-gray-700">Account Engagement Progress: ${totalCategories > 0 ? Math.round((mappedCount/totalCategories)*100) : 0}% Mapped, ${totalCategories > 0 ? Math.round((engagedCount/totalCategories)*100) : 0}% Engaged</p><div class="w-full bg-gray-200 rounded-full h-4 mt-2 relative"><div class="bg-blue-600 h-4 rounded-l-full absolute" style="width: ${totalCategories > 0 ? Math.round((mappedCount/totalCategories)*100) : 0}%; z-index: 10;" title="Mapped"></div><div class="bg-green-600 h-4 rounded-l-full absolute" style="width: ${totalCategories > 0 ? Math.round((engagedCount/totalCategories)*100) : 0}%; z-index: 20;" title="Engaged"></div></div></div></div>`;
+            container.innerHTML = accountHtml + heatmapHtml + `<h2 class="text-2xl font-bold text-gray-800 mt-12 mb-4">Department Details</h2>` + departmentsHtml;
+            renderHeatmap(data, 'heatmap-container');
 
-            container.innerHTML = accountHtml + departmentsHtml;
             document.querySelectorAll('.department-header, .category-header').forEach(header => header.addEventListener('click', (e) => { if (!e.target.closest('a')) toggleCollapse(header); }));
             document.getElementById('export-btn').addEventListener('click', exportToCSV);
             document.getElementById('pdf-btn').addEventListener('click', exportToPDF);
-            document.getElementById('import-btn').addEventListener('click', () => {
-                document.getElementById('csv-importer').value = '';
-                document.getElementById('csv-importer').click();
-            });
+            document.getElementById('import-btn').addEventListener('click', () => { document.getElementById('csv-importer').value = ''; document.getElementById('csv-importer').click(); });
         };
 
         // --- INITIALIZATION ---
-        document.addEventListener('DOMContentLoaded', () => renderAccountMap(accountData));
-        document.getElementById('csv-importer').addEventListener('change', importFromCSV);
+        document.addEventListener('DOMContentLoaded', () => {
+            renderPageLayout(accountData);
+            document.getElementById('csv-importer').addEventListener('change', importFromCSV);
+            window.addEventListener('resize', () => renderHeatmap(accountData, 'heatmap-container'));
+        });
     </script>
 </body>
 </html>
